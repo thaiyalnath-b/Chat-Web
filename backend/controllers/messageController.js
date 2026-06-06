@@ -1,37 +1,27 @@
 const Message = require("../models/Message");
 
 const getMessages = async (req, res) => {
-
     try {
+        const { senderEmail, receiverEmail, conversationId } = req.query;
 
-        const { senderEmail, receiverEmail } = req.query;
+        let query;
 
-        const messages = await Message.find({
+        if (conversationId) {
+            query = { conversationId };
+        } else {
+            query = {
+                $or: [
+                    { senderEmail, receiverEmail },
+                    { senderEmail: receiverEmail, receiverEmail: senderEmail }
+                ]
+            };
+        }
 
-            $or: [
-
-                {
-                    senderEmail,
-                    receiverEmail
-                },
-
-                {
-                    senderEmail: receiverEmail,
-                    receiverEmail: senderEmail
-                }
-
-            ]
-
-        }).sort({ createdAt: 1 });
+        const messages = await Message.find(query).sort({ createdAt: 1 });
 
         res.status(200).json(messages);
-
     } catch (error) {
-
-        res.status(500).json({
-            message: error.message
-        });
-
+        res.status(500).json({ message: error.message });
     }
 };
 

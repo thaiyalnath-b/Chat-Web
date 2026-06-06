@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../firebase/firebase";
 import socket from "../socket/socket";
@@ -8,128 +8,294 @@ import { useNavigate } from "react-router-dom";
 
 function Home() {
     const [currentUser, setCurrentUser] = useState(null);
-    const [users, setUsers] = useState([]);
-    const [selectedUser, setSelectedUser] = useState(null);
+    const [conversations, setConversations] = useState([]);
+    const [selectedConversation, setSelectedConversation] = useState(null);
     const [messages, setMessages] = useState([]);
     const [message, setMessage] = useState("");
     const [onlineUsers, setOnlineUsers] = useState([]);
+    const [showLogoutModal, setShowLogoutModal] = useState(false);
+    const [activeFilter, setActiveFilter] = useState("all");
+
+    // Search state
+    const [searchQuery, setSearchQuery] = useState("");
+    const [searchResults, setSearchResults] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const [searchMode, setSearchMode] = useState(false); // true = showing search results
+    const [searchError, setSearchError] = useState("");
+
     const messagesEndRef = useRef(null);
+    const searchTimeoutRef = useRef(null);
     const navigate = useNavigate();
 
-    const handleLogout = async () => {
+    // ─── Helpers ─────────────────────────────────────────────────────────────
 
-        try {
+    const formatTime = (date) => {
+        if (!date) return "";
+        const d = new Date(date);
+        const now = new Date();
+        const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24));
 
-            socket.disconnect();
-
-            await signOut(auth);
-
-            navigate("/");
-
-        } catch (error) {
-
-            console.log(error);
-
+        if (diffDays === 0) {
+            return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        } else if (diffDays === 1) {
+            return "Yesterday";
+        } else if (diffDays < 7) {
+            return d.toLocaleDateString([], { weekday: "short" });
+        } else {
+            return d.toLocaleDateString([], { day: "2-digit", month: "2-digit", year: "2-digit" });
         }
     };
 
-    // Firebase auth
+    const truncate = (text, len = 38) =>
+        text && text.length > len ? text.slice(0, len) + "…" : text || "";
+
+    // Move a conversation to the top and update its data
+    const upsertConversation = useCallback((updatedConv) => {
+        setConversations((prev) => {
+            const exists = prev.find((c) => c._id === updatedConv._id);
+            if (exists) {
+                const updated = prev.map((c) =>
+                    c._id === updatedConv._id ? { ...c, ...updatedConv } : c
+                );
+                // Sort by lastMessage.createdAt desc
+                return updated.sort(
+                    (a, b) =>
+                        new Date(b.lastMessage?.createdAt || b.updatedAt) -
+                        new Date(a.lastMessage?.createdAt || a.updatedAt)
+                );
+            } else {
+                return [updatedConv, ...prev];
+            }
+        });
+    }, []);
+
+    // ─── Auth ─────────────────────────────────────────────────────────────────
+
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             if (user) {
                 setCurrentUser(user);
-                // If socket already connected
-                if (socket.connected) {
-                    socket.emit("register_user", user.email);
-                }
-                // If socket reconnects later
-                socket.on("connect", () => {
-                    socket.emit("register_user", user.email);
-                });
+                if (socket.connected) socket.emit("register_user", user.email);
+                socket.on("connect", () => socket.emit("register_user", user.email));
             }
         });
         return () => unsubscribe();
     }, []);
 
-    // Fetch users
+    // ─── Load conversations ───────────────────────────────────────────────────
+
     useEffect(() => {
-
-        // Wait until Firebase auth restores user
         if (!currentUser) return;
-
-        const fetchUsers = async () => {
-
+        const fetch = async () => {
             try {
-
-                const res = await API.get("/users");
-
-                setUsers(res.data);
-
-            } catch (error) {
-
-                console.log(error);
-
+                const res = await API.get("/conversations", {
+                    params: { email: currentUser.email }
+                });
+                setConversations(res.data);
+            } catch (err) {
+                console.log(err);
             }
         };
-
-        fetchUsers();
-
+        fetch();
     }, [currentUser]);
 
-    // Fetch messages
+    // ─── Fetch messages when conversation selected ───────────────────────────
+
     useEffect(() => {
-        if (!selectedUser || !currentUser) return;
-        const fetchMessages = async () => {
+        if (!selectedConversation || !currentUser) return;
+        const fetch = async () => {
             try {
                 const res = await API.get("/messages", {
-                    params: {
-                        senderEmail: currentUser.email,
-                        receiverEmail: selectedUser.email
-                    }
+                    params: { conversationId: selectedConversation._id }
                 });
                 setMessages(res.data);
-            } catch (error) {
-                console.log(error);
+            } catch (err) {
+                console.log(err);
             }
         };
-        fetchMessages();
-    }, [selectedUser, currentUser]);
+        fetch();
 
-    // Receive messages
+        // Mark as read via socket
+        socket.emit("mark_read", {
+            conversationId: selectedConversation._id,
+            email: currentUser.email
+        });
+
+        // Reset unread count locally
+        setConversations((prev) =>
+            prev.map((c) =>
+                c._id === selectedConversation._id ? { ...c, unreadCount: 0 } : c
+            )
+        );
+    }, [selectedConversation, currentUser]);
+
+    // ─── Socket events ────────────────────────────────────────────────────────
+
     useEffect(() => {
         socket.on("receive_message", (data) => {
             if (
-                selectedUser &&
-                (
-                    data.senderEmail === selectedUser.email ||
-                    data.receiverEmail === selectedUser.email
-                )
+                selectedConversation &&
+                data.conversationId === selectedConversation._id
             ) {
                 setMessages((prev) => [...prev, data]);
+                // Mark as read immediately since conversation is open
+                socket.emit("mark_read", {
+                    conversationId: selectedConversation._id,
+                    email: currentUser?.email
+                });
             }
         });
-        return () => {
-            socket.off("receive_message");
-        };
-    }, [selectedUser]);
+        return () => socket.off("receive_message");
+    }, [selectedConversation, currentUser]);
 
-    // Online users
     useEffect(() => {
-        socket.on("online_users", (users) => {
-            console.log("Online Users:", users);
-            setOnlineUsers(users);
+        socket.on("conversation_updated", ({ conversation }) => {
+            upsertConversation(conversation);
         });
-        return () => {
-            socket.off("online_users");
-        };
+        return () => socket.off("conversation_updated");
+    }, [upsertConversation]);
+
+    useEffect(() => {
+        socket.on("messages_read", ({ conversationId }) => {
+            setConversations((prev) =>
+                prev.map((c) =>
+                    c._id === conversationId ? { ...c, unreadCount: 0 } : c
+                )
+            );
+        });
+        return () => socket.off("messages_read");
     }, []);
 
-    // Auto scroll
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({
-            behavior: "smooth"
+        socket.on("online_users", (users) => {
+            setOnlineUsers(users);
+            // Update isOnline status in conversations
+            setConversations((prev) =>
+                prev.map((c) => ({
+                    ...c,
+                    otherUser: c.otherUser
+                        ? { ...c.otherUser, isOnline: users.includes(c.otherUser.email) }
+                        : c.otherUser
+                }))
+            );
         });
+        return () => socket.off("online_users");
+    }, []);
+
+    // ─── Auto scroll ──────────────────────────────────────────────────────────
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
+
+    // ─── Search ───────────────────────────────────────────────────────────────
+
+    const handleSearchChange = (e) => {
+        const q = e.target.value;
+        setSearchQuery(q);
+        setSearchError("");
+
+        if (!q.trim()) {
+            setSearchMode(false);
+            setSearchResults([]);
+            clearTimeout(searchTimeoutRef.current);
+            return;
+        }
+
+        setSearchMode(true);
+        setIsSearching(true);
+
+        clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = setTimeout(async () => {
+            try {
+                const res = await API.get("/conversations/search", {
+                    params: { query: q, currentEmail: currentUser.email }
+                });
+                setSearchResults(res.data);
+                if (res.data.length === 0) {
+                    setSearchError("This user is not registered on this platform.");
+                }
+            } catch (err) {
+                console.log(err);
+            } finally {
+                setIsSearching(false);
+            }
+        }, 350);
+    };
+
+    const clearSearch = () => {
+        setSearchQuery("");
+        setSearchMode(false);
+        setSearchResults([]);
+        setSearchError("");
+    };
+
+    const startConversation = async (otherUser) => {
+        try {
+            const res = await API.post("/conversations", {
+                currentUserEmail: currentUser.email,
+                otherUserEmail: otherUser.email
+            });
+            clearSearch();
+            upsertConversation(res.data);
+            setSelectedConversation(res.data);
+        } catch (err) {
+            if (err.response?.status === 404) {
+                setSearchError("This user is not registered on this platform.");
+            }
+        }
+    };
+
+    // ─── Send message ─────────────────────────────────────────────────────────
+
+    const sendMessage = () => {
+        if (!message.trim() || !selectedConversation) return;
+
+        const messageData = {
+            senderEmail: currentUser.email,
+            receiverEmail: selectedConversation.otherUser.email,
+            message: message.trim(),
+            conversationId: selectedConversation._id,
+            createdAt: new Date()
+        };
+
+        socket.emit("send_message", messageData);
+        setMessages((prev) => [...prev, messageData]);
+
+        // Optimistically update last message in sidebar
+        upsertConversation({
+            ...selectedConversation,
+            lastMessage: {
+                text: message.trim(),
+                senderEmail: currentUser.email,
+                createdAt: new Date()
+            }
+        });
+
+        setMessage("");
+    };
+
+    // ─── Logout ───────────────────────────────────────────────────────────────
+
+    const handleLogout = async () => {
+        try {
+            socket.disconnect();
+            await signOut(auth);
+            navigate("/");
+        } catch (error) {
+            console.log(error);
+        }
+    };
+
+    // ─── Filter conversations ─────────────────────────────────────────────────
+
+    const filteredConversations = conversations.filter((c) => {
+        if (activeFilter === "unread") return c.unreadCount > 0;
+        if (activeFilter === "read") return !c.unreadCount || c.unreadCount === 0;
+        return true;
+    });
+
+    // ─── Loading ──────────────────────────────────────────────────────────────
 
     if (!currentUser) {
         return (
@@ -140,26 +306,13 @@ function Home() {
         );
     }
 
-    // Send message
-    const sendMessage = () => {
-        if (!message || !selectedUser) return;
-
-        const messageData = {
-            senderEmail: currentUser.email,
-            receiverEmail: selectedUser.email,
-            message,
-            createdAt: new Date()
-        };
-
-        socket.emit("send_message", messageData);
-        setMessages((prev) => [...prev, messageData]);
-        setMessage("");
-    };
+    // ─── Render ───────────────────────────────────────────────────────────────
 
     return (
         <div className="chat-app">
-            {/* SIDEBAR */}
+            {/* ── SIDEBAR ── */}
             <div className="sidebar">
+
                 {/* Sidebar Header */}
                 <div className="sidebar-header">
                     <div className="d-flex align-items-center justify-content-between w-100">
@@ -175,7 +328,11 @@ function Home() {
                                 <small>{currentUser.email}</small>
                             </div>
                         </div>
-                        <button className="logout-btn" onClick={handleLogout} title="Logout">
+                        <button
+                            className="logout-btn"
+                            onClick={() => setShowLogoutModal(true)}
+                            title="Logout"
+                        >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                                 <polyline points="16 17 21 12 16 7"></polyline>
@@ -185,71 +342,222 @@ function Home() {
                     </div>
                 </div>
 
-                {/* Users List */}
-                <div className="sidebar-users">
-                    {users
-                        .filter((user) => user.email !== currentUser.email)
-                        .map((user) => {
-                            const isOnline = onlineUsers.includes(user.email);
-                            return (
-                                <div
-                                    key={user._id}
-                                    className={`user-item ${selectedUser?.email === user.email ? "active-user" : ""}`}
-                                    onClick={() => setSelectedUser(user)}
-                                >
-                                    <div className="profile-image-container">
-                                        <img
-                                            src={user.profilePic}
-                                            alt="profile"
-                                            className="profile-image"
-                                            referrerPolicy="no-referrer"
-                                        />
-                                        <span className={`status-badge ${isOnline ? "online" : "offline"}`}></span>
-                                    </div>
+                {/* Search Bar */}
+                <div className="search-container">
+                    <div className="search-input-wrapper">
+                        <svg className="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <input
+                            type="text"
+                            className="search-input"
+                            placeholder="Search by name or email…"
+                            value={searchQuery}
+                            onChange={handleSearchChange}
+                        />
+                        {searchQuery && (
+                            <button className="search-clear-btn" onClick={clearSearch}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        )}
+                    </div>
+                </div>
 
-                                    <div className="flex-grow-1 user-info-block">
-                                        <div className="user-row-header">
-                                            <h6 className="mb-0 user-name-text">{user.name}</h6>
-                                        </div>
-                                        <div className="user-row-sub">
-                                            <small className="user-email-text">{user.email}</small>
-                                            <small className={`status-text ${isOnline ? "text-success" : "text-secondary"}`}>
-                                                {isOnline ? "Online" : "Offline"}
-                                            </small>
-                                        </div>
-                                    </div>
-                                </div>
+                {/* Filter Tabs — only visible when not in search mode */}
+                {!searchMode && (
+                    <div className="filter-tabs">
+                        {["all", "unread", "read"].map((tab) => {
+                            const unreadTotal = conversations.filter(c => c.unreadCount > 0).length;
+                            return (
+                                <button
+                                    key={tab}
+                                    className={`filter-tab ${activeFilter === tab ? "active" : ""}`}
+                                    onClick={() => setActiveFilter(tab)}
+                                >
+                                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                                    {tab === "unread" && unreadTotal > 0 && (
+                                        <span className="filter-badge">{unreadTotal}</span>
+                                    )}
+                                </button>
                             );
                         })}
+                    </div>
+                )}
+
+                {/* Conversation / Search List */}
+                <div className="sidebar-users">
+
+                    {/* ── SEARCH MODE ── */}
+                    {searchMode && (
+                        <>
+                            {isSearching && (
+                                <div className="search-state-msg">
+                                    <div className="mini-spinner"></div>
+                                    <span>Searching…</span>
+                                </div>
+                            )}
+
+                            {!isSearching && searchResults.length > 0 && (
+                                <>
+                                    <p className="search-results-label">Search results</p>
+                                    {searchResults.map((user) => (
+                                        <div
+                                            key={user._id}
+                                            className="user-item search-result-item"
+                                            onClick={() => startConversation(user)}
+                                        >
+                                            <div className="profile-image-container">
+                                                <img
+                                                    src={user.profilePic}
+                                                    alt="profile"
+                                                    className="profile-image"
+                                                    referrerPolicy="no-referrer"
+                                                />
+                                                <span className={`status-badge ${onlineUsers.includes(user.email) ? "online" : "offline"}`}></span>
+                                            </div>
+                                            <div className="flex-grow-1 user-info-block">
+                                                <div className="user-row-header">
+                                                    <h6 className="mb-0 user-name-text">{user.name}</h6>
+                                                </div>
+                                                <small className="user-email-text">{user.email}</small>
+                                            </div>
+                                            <div className="start-chat-chip">
+                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                                </svg>
+                                                Chat
+                                            </div>
+                                        </div>
+                                    ))}
+                                </>
+                            )}
+
+                            {!isSearching && searchResults.length === 0 && searchError && (
+                                <div className="search-empty-state">
+                                    <div className="search-empty-icon">
+                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <circle cx="11" cy="11" r="8"></circle>
+                                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                            <line x1="8" y1="11" x2="14" y2="11"></line>
+                                        </svg>
+                                    </div>
+                                    <p>{searchError}</p>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {/* ── CONVERSATION MODE ── */}
+                    {!searchMode && (
+                        <>
+                            {filteredConversations.length === 0 ? (
+                                <div className="empty-conversations">
+                                    {activeFilter === "all" ? (
+                                        <>
+                                            <div className="empty-icon-wrap">
+                                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                                                    <circle cx="11" cy="11" r="8"></circle>
+                                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                                </svg>
+                                            </div>
+                                            <h5>No conversations yet</h5>
+                                            <p>Search for a user to start a conversation.</p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="empty-icon-wrap">
+                                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4">
+                                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                                                </svg>
+                                            </div>
+                                            <p>No {activeFilter} conversations.</p>
+                                        </>
+                                    )}
+                                </div>
+                            ) : (
+                                filteredConversations.map((conv) => {
+                                    const isActive = selectedConversation?._id === conv._id;
+                                    const isOnline = onlineUsers.includes(conv.otherUser?.email);
+                                    const hasUnread = conv.unreadCount > 0;
+
+                                    return (
+                                        <div
+                                            key={conv._id}
+                                            className={`user-item conversation-item ${isActive ? "active-user" : ""} ${hasUnread ? "has-unread" : ""}`}
+                                            onClick={() => setSelectedConversation(conv)}
+                                        >
+                                            <div className="profile-image-container">
+                                                <img
+                                                    src={conv.otherUser?.profilePic}
+                                                    alt="profile"
+                                                    className="profile-image"
+                                                    referrerPolicy="no-referrer"
+                                                />
+                                                <span className={`status-badge ${isOnline ? "online" : "offline"}`}></span>
+                                            </div>
+
+                                            <div className="flex-grow-1 user-info-block">
+                                                <div className="user-row-header">
+                                                    <h6 className={`mb-0 user-name-text ${hasUnread ? "unread-name" : ""}`}>
+                                                        {conv.otherUser?.name}
+                                                    </h6>
+                                                    <span className="conv-time">
+                                                        {formatTime(conv.lastMessage?.createdAt || conv.updatedAt)}
+                                                    </span>
+                                                </div>
+                                                <div className="user-row-sub">
+                                                    <small className={`last-message-preview ${hasUnread ? "unread-preview" : ""}`}>
+                                                        {conv.lastMessage?.senderEmail === currentUser.email && conv.lastMessage?.text
+                                                            ? `You: ${truncate(conv.lastMessage.text, 28)}`
+                                                            : truncate(conv.lastMessage?.text) || "Start a conversation"}
+                                                    </small>
+                                                    {hasUnread && (
+                                                        <span className="unread-badge">
+                                                            {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </>
+                    )}
                 </div>
             </div>
 
-            {/* CHAT AREA */}
+            {/* ── CHAT AREA ── */}
             <div className="chat-section">
-                {selectedUser ? (
+                {selectedConversation ? (
                     <>
                         {/* Chat Header */}
                         <div className="chat-header">
                             <div className="d-flex align-items-center">
                                 <div className="profile-image-container">
                                     <img
-                                        src={selectedUser.profilePic}
+                                        src={selectedConversation.otherUser?.profilePic}
                                         alt="profile"
                                         className="profile-image"
                                         referrerPolicy="no-referrer"
                                     />
-                                    <span className={`status-badge ${onlineUsers.includes(selectedUser.email) ? "online" : "offline"}`}></span>
+                                    <span className={`status-badge ${onlineUsers.includes(selectedConversation.otherUser?.email) ? "online" : "offline"}`}></span>
                                 </div>
                                 <div className="user-metadata">
-                                    <h6 className="mb-0">{selectedUser.name}</h6>
-                                    <small className={onlineUsers.includes(selectedUser.email) ? "text-success" : "text-secondary"}>
-                                        {onlineUsers.includes(selectedUser.email) ? "Active Now" : "Offline"}
+                                    <h6 className="mb-0">{selectedConversation.otherUser?.name}</h6>
+                                    <small className={onlineUsers.includes(selectedConversation.otherUser?.email) ? "text-success" : "text-secondary"}>
+                                        {onlineUsers.includes(selectedConversation.otherUser?.email) ? "Active Now" : "Offline"}
                                     </small>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Messages Grid */}
+                        {/* Messages */}
                         <div className="chat-messages">
                             {messages.map((msg, index) => {
                                 const isMyMessage = msg.senderEmail === currentUser.email;
@@ -259,9 +567,7 @@ function Home() {
                                         className={`message-wrapper ${isMyMessage ? "my-message" : "other-message"}`}
                                     >
                                         <div className={`message-bubble ${isMyMessage ? "my-bubble" : "other-bubble"}`}>
-                                            <div className="message-text-content">
-                                                {msg.message}
-                                            </div>
+                                            <div className="message-text-content">{msg.message}</div>
                                             <div className="message-time">
                                                 {new Date(msg.createdAt).toLocaleTimeString([], {
                                                     hour: "2-digit",
@@ -275,7 +581,7 @@ function Home() {
                             <div ref={messagesEndRef}></div>
                         </div>
 
-                        {/* Message Input Box */}
+                        {/* Input */}
                         <div className="chat-input-area">
                             <input
                                 type="text"
@@ -283,18 +589,13 @@ function Home() {
                                 placeholder="Type a message..."
                                 value={message}
                                 onChange={(e) => setMessage(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                        sendMessage();
-                                    }
-                                }}
+                                onKeyDown={(e) => { if (e.key === "Enter") sendMessage(); }}
                             />
                             <button className="btn btn-primary chat-send-btn" onClick={sendMessage}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <line x1="22" y1="2" x2="11" y2="13"></line>
                                     <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                                 </svg>
-
                             </button>
                         </div>
                     </>
@@ -305,11 +606,32 @@ function Home() {
                                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                             </svg>
                         </div>
-                        <h3>Select a user to start chatting</h3>
-                        <p>Secure connection initialized. Pick a thread from the side panel.</p>
+                        <h3>Select a conversation</h3>
+                        <p>Search for a user or pick a conversation from the sidebar to get started.</p>
                     </div>
                 )}
             </div>
+
+            {/* ── LOGOUT MODAL ── */}
+            {showLogoutModal && (
+                <div className="logout-modal-overlay">
+                    <div className="logout-modal">
+                        <div className="logout-icon">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                                <polyline points="16 17 21 12 16 7" />
+                                <line x1="21" y1="12" x2="9" y2="12" />
+                            </svg>
+                        </div>
+                        <h4>Logout Session</h4>
+                        <p>Are you sure you want to sign out of your account? You can sign back in anytime.</p>
+                        <div className="logout-modal-actions">
+                            <button className="cancel-btn" onClick={() => setShowLogoutModal(false)}>Cancel</button>
+                            <button className="confirm-btn" onClick={handleLogout}>Continue Logout</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

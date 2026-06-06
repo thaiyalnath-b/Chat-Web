@@ -80,12 +80,16 @@
 
 .brand-logo-light {
     display: inline-flex;
-    padding: 11px;
+    /* padding: 11px; */
     background: #ffffff;
     border: 1px solid #e2e8f0;
     border-radius: 12px;
     margin-bottom: 24px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+    
+    .img_homies{
+        height: 120px;
+    }
 }
 
 .main-headline-light {
