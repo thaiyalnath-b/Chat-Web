@@ -7,7 +7,7 @@ const {
     createOrGetConversation,
     markConversationRead,
     searchUsers
-} = require("../controllers/conversationController");
+} = require("../controllers/ConversationController");
 
 // GET /api/conversations?email=xxx
 router.get("/", protect, getUserConversations);
