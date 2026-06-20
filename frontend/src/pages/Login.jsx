@@ -35,7 +35,7 @@ function Login() {
                 <div className="brand-header-light">
                     <div className="brand-logo-light">
                         <img
-                            src="../public/llo.png"
+                            src="/llo.png"
                             alt="Homies logo"
                             className="img_homies"
                         />

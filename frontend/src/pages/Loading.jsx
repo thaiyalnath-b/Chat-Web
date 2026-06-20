@@ -10,7 +10,7 @@ function Loading() {
                     <div className="loading-ring-outer"></div>
                     <div className="loading-ring"></div>
                     <img
-                        src="../public/h4.png"
+                        src="/h4.png"
                         alt="Homies"
                         className="loading-logo"
                     />
