@@ -34,7 +34,16 @@ const io = new Server(server, {
     }
 });
 
-app.use(cors());
+app.use(
+    cors({
+        origin: [
+            process.env.FRONTEND_URL,
+            process.env.FRONTEND_NETWORK_URL,
+            "https://homies-chat.vercel.app"
+        ],
+        credentials: true
+    })
+);
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
