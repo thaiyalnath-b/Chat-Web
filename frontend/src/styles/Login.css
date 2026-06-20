@@ -1,58 +1,70 @@
-/* Light Aesthetic Custom Variables */
+/* ═══════════════════════════════════════════════════════════
+   LOGIN — RESPONSIVE
+   ═══════════════════════════════════════════════════════════ */
+
 :root {
     --bg-light: #f8fafc;
-    --card-bg-light: rgba(255, 255, 255, 0.85);
-    --card-border-light: rgba(226, 232, 240, 0.8);
-    --text-primary-light: #0f172a; /* Sophisticated midnight slate */
-    --text-muted-light: #64748b; /* Clean studio gray */
+    --card-bg-light: rgba(255, 255, 255, 0.9);
+    --card-border-light: rgba(226, 232, 240, 0.85);
+    --text-primary-light: #0f172a;
+    --text-muted-light: #64748b;
     --btn-bg-light: #ffffff;
     --btn-border-light: #e2e8f0;
     --btn-text-light: #334155;
-    --font-stack-light: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* Base Viewport Styling */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
 .login-viewport-light {
     position: relative;
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    width: 100vw;
+    min-height: 100dvh;
+    width: 100%;
     background-color: var(--bg-light);
-    font-family: var(--font-stack-light);
-    margin: 0;
-    padding: 24px;
-    box-sizing: border-box;
+    font-family: var(--font-stack);
+    padding: clamp(16px, 4vw, 32px);
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
 }
 
-/* Soft Pastels Background Light Emitting Fields */
+/* ── Ambient blurs ── */
 .ambient-blur {
     position: absolute;
     border-radius: 50%;
-    filter: blur(120px);
-    opacity: 0.5;
+    filter: blur(100px);
+    opacity: 0.45;
     z-index: 1;
     pointer-events: none;
+    will-change: transform;
 }
+
 .blur-indigo {
-    top: -15%;
-    left: -5%;
-    width: 500px;
-    height: 500px;
+    top: -12%;
+    left: -8%;
+    width: clamp(260px, 45vw, 500px);
+    height: clamp(260px, 45vw, 500px);
     background: radial-gradient(circle, #e0e7ff 0%, transparent 70%);
 }
+
 .blur-amber {
-    bottom: -10%;
-    right: -5%;
-    width: 450px;
-    height: 450px;
+    bottom: -8%;
+    right: -8%;
+    width: clamp(220px, 40vw, 450px);
+    height: clamp(220px, 40vw, 450px);
     background: radial-gradient(circle, #fef3c7 0%, transparent 70%);
 }
 
-/* High-End Crisp Layered Card */
+/* ── Card ── */
 .premium-card-light {
     position: relative;
     z-index: 2;
@@ -60,106 +72,113 @@
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--card-border-light);
-    padding: 48px 40px;
+    padding: clamp(28px, 6vw, 52px) clamp(22px, 5vw, 44px);
     border-radius: 20px;
     width: 100%;
-    max-width: 390px;
-    /* Soft multilayered drop shadow for real depth */
-    box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.03),
-                0 20px 25px -5px rgba(15, 23, 42, 0.08),
-                0 10px 10px -5px rgba(15, 23, 42, 0.04);
+    max-width: 400px;
+    box-shadow:
+        0 4px 6px -1px rgba(15, 23, 42, 0.04),
+        0 20px 25px -5px rgba(15, 23, 42, 0.09),
+        0 10px 10px -5px rgba(15, 23, 42, 0.04);
     display: flex;
     flex-direction: column;
 }
 
-/* Header & Micro-Branding */
+/* ── Brand header ── */
 .brand-header-light {
     text-align: center;
-    margin-bottom: 36px;
+    margin-bottom: clamp(24px, 5vw, 40px);
 }
 
 .brand-logo-light {
     display: inline-flex;
-    /* padding: 11px; */
     background: #ffffff;
     border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    margin-bottom: 24px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
-    
-    .img_homies{
-        height: 120px;
-    }
+    border-radius: 14px;
+    margin-bottom: clamp(16px, 3vw, 24px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+    overflow: hidden;
+}
+
+.brand-logo-light .img_homies {
+    height: clamp(72px, 18vw, 120px);
+    width: auto;
+    display: block;
 }
 
 .main-headline-light {
-    font-size: 24px;
+    font-size: clamp(20px, 4.5vw, 24px);
     font-weight: 700;
     color: var(--text-primary-light);
-    margin: 0 0 8px 0;
+    margin: 0 0 8px;
     letter-spacing: -0.025em;
+    line-height: 1.2;
 }
 
 .sub-headline-light {
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: clamp(13px, 2.5vw, 14px);
+    line-height: 1.55;
     color: var(--text-muted-light);
     margin: 0;
 }
 
-/* Input/Action Components Wrapper */
+/* ── Action wrapper ── */
 .action-wrapper-light {
-    margin-bottom: 24px;
+    margin-bottom: clamp(18px, 4vw, 24px);
 }
 
-/* Ultra-Smooth Light Google Identity Button */
+/* ── Google button ── */
 .google-btn-light {
     position: relative;
     display: flex;
     align-items: center;
     width: 100%;
-    padding: 13px 20px;
+    padding: clamp(11px, 2.5vw, 13px) 20px;
     background-color: var(--btn-bg-light);
     border: 1px solid var(--btn-border-light);
     border-radius: 10px;
     cursor: pointer;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-    
-    /* Elegant transition config */
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-                box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-                border-color 0.15s ease,
-                background-color 0.15s ease;
+    transition:
+        transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+        box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.15s ease,
+        background-color 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 
 .google-icon-box {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: auto; /* Maintains balanced absolute optical centering */
+    margin-right: auto;
+    flex-shrink: 0;
 }
 
 .btn-text-light {
-    font-size: 14.5px;
+    font-size: clamp(13.5px, 2.5vw, 14.5px);
     font-weight: 600;
     color: var(--btn-text-light);
     margin-right: auto;
+    white-space: nowrap;
 }
 
 .arrow-icon-light {
     opacity: 0;
-    color: #4f46e5; /* Accent color indicator */
+    color: #4f46e5;
     transform: translateX(-4px);
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    flex-shrink: 0;
 }
 
-/* Interactive States */
 .google-btn-light:hover {
     background-color: #ffffff;
     border-color: #cbd5e1;
     transform: translateY(-1.5px);
-    box-shadow: 0 10px 20px -5px rgba(15, 23, 42, 0.08),
-                0 4px 6px -2px rgba(15, 23, 42, 0.02);
+    box-shadow:
+        0 10px 20px -5px rgba(15, 23, 42, 0.08),
+        0 4px 6px -2px rgba(15, 23, 42, 0.02);
 }
 
 .google-btn-light:hover .arrow-icon-light {
@@ -178,7 +197,19 @@
     outline-offset: 2px;
 }
 
-/* Security Footer Accent */
+/* Touch: disable hover lift on real touch devices */
+@media (hover: none) {
+    .google-btn-light:hover {
+        transform: none;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .google-btn-light:active {
+        background-color: #f1f5f9;
+    }
+}
+
+/* ── Footer ── */
 .card-footer-light {
     display: flex;
     justify-content: center;
@@ -192,4 +223,15 @@
     font-weight: 500;
     color: #94a3b8;
     margin: 0;
+}
+
+/* ── Very small screens (< 360px) ── */
+@media (max-width: 359px) {
+    .premium-card-light {
+        border-radius: 14px;
+    }
+
+    .brand-logo-light {
+        border-radius: 10px;
+    }
 }

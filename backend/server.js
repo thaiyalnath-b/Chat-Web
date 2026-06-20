@@ -148,6 +148,22 @@ io.on("connection", (socket) => {
         }
     });
 
+    socket.on("user_offline", async (email) => {
+        console.log("User Offline:", email);
+
+        await User.findOneAndUpdate(
+            { email },
+            { isOnline: false }
+        );
+
+        delete users[email];
+
+        io.emit(
+            "online_users",
+            Object.keys(users)
+        );
+    });
+
     socket.on("disconnect", async () => {
         console.log("User Disconnected:", socket.id);
 
@@ -160,6 +176,8 @@ io.on("connection", (socket) => {
 
         io.emit("online_users", Object.keys(users));
     });
+
+
 });
 
 // Helper: build conversation payload for both sender and receiver

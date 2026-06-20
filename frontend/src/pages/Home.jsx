@@ -4,6 +4,7 @@ import { auth } from "../firebase/firebase";
 import socket from "../socket/socket";
 import API from "../services/api";
 import "../styles/chat.css";
+import Loading from "./Loading";
 import { useNavigate } from "react-router-dom";
 
 function Home() {
@@ -15,12 +16,13 @@ function Home() {
     const [onlineUsers, setOnlineUsers] = useState([]);
     const [showLogoutModal, setShowLogoutModal] = useState(false);
     const [activeFilter, setActiveFilter] = useState("all");
+    const [mobileSidebarOpen, setMobileSidebarOpen] = useState(true); // ← ADD HERE
 
     // Search state
     const [searchQuery, setSearchQuery] = useState("");
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
-    const [searchMode, setSearchMode] = useState(false); // true = showing search results
+    const [searchMode, setSearchMode] = useState(false);
     const [searchError, setSearchError] = useState("");
 
     const messagesEndRef = useRef(null);
@@ -49,7 +51,6 @@ function Home() {
     const truncate = (text, len = 38) =>
         text && text.length > len ? text.slice(0, len) + "…" : text || "";
 
-    // Move a conversation to the top and update its data
     const upsertConversation = useCallback((updatedConv) => {
         setConversations((prev) => {
             const exists = prev.find((c) => c._id === updatedConv._id);
@@ -57,7 +58,6 @@ function Home() {
                 const updated = prev.map((c) =>
                     c._id === updatedConv._id ? { ...c, ...updatedConv } : c
                 );
-                // Sort by lastMessage.createdAt desc
                 return updated.sort(
                     (a, b) =>
                         new Date(b.lastMessage?.createdAt || b.updatedAt) -
@@ -70,20 +70,18 @@ function Home() {
     }, []);
 
     // ─── Auth ─────────────────────────────────────────────────────────────────
-
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             if (user) {
                 setCurrentUser(user);
-                if (socket.connected) socket.emit("register_user", user.email);
-                socket.on("connect", () => socket.emit("register_user", user.email));
+                if (!socket.connected) socket.connect();
+                socket.emit("register_user", user.email);
             }
         });
         return () => unsubscribe();
     }, []);
 
     // ─── Load conversations ───────────────────────────────────────────────────
-
     useEffect(() => {
         if (!currentUser) return;
         const fetch = async () => {
@@ -100,7 +98,6 @@ function Home() {
     }, [currentUser]);
 
     // ─── Fetch messages when conversation selected ───────────────────────────
-
     useEffect(() => {
         if (!selectedConversation || !currentUser) return;
         const fetch = async () => {
@@ -115,13 +112,11 @@ function Home() {
         };
         fetch();
 
-        // Mark as read via socket
         socket.emit("mark_read", {
             conversationId: selectedConversation._id,
             email: currentUser.email
         });
 
-        // Reset unread count locally
         setConversations((prev) =>
             prev.map((c) =>
                 c._id === selectedConversation._id ? { ...c, unreadCount: 0 } : c
@@ -130,15 +125,10 @@ function Home() {
     }, [selectedConversation, currentUser]);
 
     // ─── Socket events ────────────────────────────────────────────────────────
-
     useEffect(() => {
         socket.on("receive_message", (data) => {
-            if (
-                selectedConversation &&
-                data.conversationId === selectedConversation._id
-            ) {
+            if (selectedConversation && data.conversationId === selectedConversation._id) {
                 setMessages((prev) => [...prev, data]);
-                // Mark as read immediately since conversation is open
                 socket.emit("mark_read", {
                     conversationId: selectedConversation._id,
                     email: currentUser?.email
@@ -156,6 +146,30 @@ function Home() {
     }, [upsertConversation]);
 
     useEffect(() => {
+
+        if (!conversations.length) return;
+
+        const lastConversationId =
+            localStorage.getItem(
+                "lastConversationId"
+            );
+
+        if (!lastConversationId) return;
+
+        const conversation =
+            conversations.find(
+                c => c._id === lastConversationId
+            );
+
+        if (conversation) {
+            setSelectedConversation(
+                conversation
+            );
+        }
+
+    }, [conversations]);
+
+    useEffect(() => {
         socket.on("messages_read", ({ conversationId }) => {
             setConversations((prev) =>
                 prev.map((c) =>
@@ -169,7 +183,6 @@ function Home() {
     useEffect(() => {
         socket.on("online_users", (users) => {
             setOnlineUsers(users);
-            // Update isOnline status in conversations
             setConversations((prev) =>
                 prev.map((c) => ({
                     ...c,
@@ -183,13 +196,11 @@ function Home() {
     }, []);
 
     // ─── Auto scroll ──────────────────────────────────────────────────────────
-
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
     // ─── Search ───────────────────────────────────────────────────────────────
-
     const handleSearchChange = (e) => {
         const q = e.target.value;
         setSearchQuery(q);
@@ -239,6 +250,7 @@ function Home() {
             clearSearch();
             upsertConversation(res.data);
             setSelectedConversation(res.data);
+            setMobileSidebarOpen(false); // ← ADD HERE (after startConversation)
         } catch (err) {
             if (err.response?.status === 404) {
                 setSearchError("This user is not registered on this platform.");
@@ -247,7 +259,6 @@ function Home() {
     };
 
     // ─── Send message ─────────────────────────────────────────────────────────
-
     const sendMessage = () => {
         if (!message.trim() || !selectedConversation) return;
 
@@ -262,7 +273,6 @@ function Home() {
         socket.emit("send_message", messageData);
         setMessages((prev) => [...prev, messageData]);
 
-        // Optimistically update last message in sidebar
         upsertConversation({
             ...selectedConversation,
             lastMessage: {
@@ -276,19 +286,29 @@ function Home() {
     };
 
     // ─── Logout ───────────────────────────────────────────────────────────────
-
     const handleLogout = async () => {
+
         try {
-            socket.disconnect();
+
+            localStorage.removeItem(
+                "lastConversationId"
+            );
+
+            socket.emit(
+                "user_offline",
+                currentUser.email
+            );
+
             await signOut(auth);
-            navigate("/");
+
+            navigate("/login");
+
         } catch (error) {
             console.log(error);
         }
     };
 
     // ─── Filter conversations ─────────────────────────────────────────────────
-
     const filteredConversations = conversations.filter((c) => {
         if (activeFilter === "unread") return c.unreadCount > 0;
         if (activeFilter === "read") return !c.unreadCount || c.unreadCount === 0;
@@ -296,22 +316,17 @@ function Home() {
     });
 
     // ─── Loading ──────────────────────────────────────────────────────────────
-
     if (!currentUser) {
-        return (
-            <div className="chat-loading-screen">
-                <div className="spinner"></div>
-                <h1>Loading application...</h1>
-            </div>
-        );
+        return <Loading />;
     }
 
     // ─── Render ───────────────────────────────────────────────────────────────
-
     return (
         <div className="chat-app">
+
             {/* ── SIDEBAR ── */}
-            <div className="sidebar">
+            {/* ↓ ADD sidebar--hidden class toggle for mobile */}
+            <div className={`sidebar${!mobileSidebarOpen ? " sidebar--hidden" : ""}`}>
 
                 {/* Sidebar Header */}
                 <div className="sidebar-header">
@@ -367,7 +382,7 @@ function Home() {
                     </div>
                 </div>
 
-                {/* Filter Tabs — only visible when not in search mode */}
+                {/* Filter Tabs */}
                 {!searchMode && (
                     <div className="filter-tabs">
                         {["all", "unread", "read"].map((tab) => {
@@ -489,7 +504,18 @@ function Home() {
                                         <div
                                             key={conv._id}
                                             className={`user-item conversation-item ${isActive ? "active-user" : ""} ${hasUnread ? "has-unread" : ""}`}
-                                            onClick={() => setSelectedConversation(conv)}
+                                            // ↓ ADD setMobileSidebarOpen(false) here
+                                            onClick={() => {
+
+                                                localStorage.setItem(
+                                                    "lastConversationId",
+                                                    conv._id
+                                                );
+
+                                                setSelectedConversation(conv);
+
+                                                setMobileSidebarOpen(false);
+                                            }}
                                         >
                                             <div className="profile-image-container">
                                                 <img
@@ -539,6 +565,18 @@ function Home() {
                         {/* Chat Header */}
                         <div className="chat-header">
                             <div className="d-flex align-items-center">
+
+                                {/* ↓ BACK BUTTON — only visible on mobile via CSS */}
+                                <button
+                                    className="chat-back-btn"
+                                    onClick={() => setMobileSidebarOpen(true)}
+                                    title="Back"
+                                >
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="15 18 9 12 15 6"></polyline>
+                                    </svg>
+                                </button>
+
                                 <div className="profile-image-container">
                                     <img
                                         src={selectedConversation.otherUser?.profilePic}
