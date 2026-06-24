@@ -146,28 +146,16 @@ function Home() {
     }, [upsertConversation]);
 
     useEffect(() => {
-
         if (!conversations.length) return;
 
-        const lastConversationId =
-            localStorage.getItem(
-                "lastConversationId"
-            );
-
+        const lastConversationId = localStorage.getItem("lastConversationId");
         if (!lastConversationId) return;
 
-        const conversation =
-            conversations.find(
-                c => c._id === lastConversationId
-            );
-
-        if (conversation) {
-            setSelectedConversation(
-                conversation
-            );
+        const conversation = conversations.find((c) => c._id === lastConversationId);
+        if (conversation && selectedConversation?._id !== conversation._id) {
+            setSelectedConversation(conversation);
         }
-
-    }, [conversations]);
+    }, [conversations, selectedConversation]);
 
     useEffect(() => {
         socket.on("messages_read", ({ conversationId }) => {
