@@ -4,7 +4,10 @@ const googleLogin = async (req, res) => {
 
     try {
 
-        const { firebaseUid, name, email, profilePic } = req.body;
+        const { firebaseUid, name, fullName, email, profilePic, profilePicture } = req.body;
+
+        const resolvedName = fullName || name;
+        const resolvedPicture = profilePicture || profilePic || "";
 
         let user = await User.findOne({ email });
 
@@ -12,9 +15,11 @@ const googleLogin = async (req, res) => {
 
             user = await User.create({
                 firebaseUid,
-                name,
+                fullName: resolvedName,
+                name: resolvedName,
                 email,
-                profilePic
+                profilePicture: resolvedPicture,
+                profilePic: resolvedPicture
             });
         }
 

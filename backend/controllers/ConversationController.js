@@ -25,9 +25,9 @@ const getUserConversations = async (req, res) => {
                     updatedAt: conv.updatedAt,
                     otherUser: otherUser
                         ? {
-                            name: otherUser.name,
+                            name: otherUser.fullName || otherUser.name,
                             email: otherUser.email,
-                            profilePic: otherUser.profilePic,
+                            profilePic: otherUser.profilePicture || otherUser.profilePic,
                             isOnline: otherUser.isOnline
                         }
                         : null
@@ -72,9 +72,9 @@ const createOrGetConversation = async (req, res) => {
             unreadCount: 0,
             updatedAt: conversation.updatedAt,
             otherUser: {
-                name: otherUser.name,
+                name: otherUser.fullName || otherUser.name,
                 email: otherUser.email,
-                profilePic: otherUser.profilePic,
+                profilePic: otherUser.profilePicture || otherUser.profilePic,
                 isOnline: otherUser.isOnline
             }
         });
@@ -127,7 +127,8 @@ const searchUsers = async (req, res) => {
             email: { $ne: currentEmail },
             $or: [
                 { email: { $regex: query, $options: "i" } },
-                { name: { $regex: query, $options: "i" } }
+                { name: { $regex: query, $options: "i" } },
+                { fullName: { $regex: query, $options: "i" } }
             ]
         }).limit(5);
 

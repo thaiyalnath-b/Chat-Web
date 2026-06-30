@@ -1,14 +1,18 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../firebase/firebase";
 import socket from "../socket/socket";
 import API from "../services/api";
+import { getProfile } from "../services/profileService";
+import { Dropdown } from "antd";
+import { UserOutlined, LogoutOutlined } from "@ant-design/icons";
 import "../styles/chat.css";
 import Loading from "./Loading";
 import { useNavigate } from "react-router-dom";
 
 function Home() {
     const [currentUser, setCurrentUser] = useState(null);
+    const [userProfile, setUserProfile] = useState(null);
     const [conversations, setConversations] = useState([]);
     const [selectedConversation, setSelectedConversation] = useState(null);
     const [messages, setMessages] = useState([]);
@@ -51,6 +55,45 @@ function Home() {
     const truncate = (text, len = 38) =>
         text && text.length > len ? text.slice(0, len) + "…" : text || "";
 
+    const displayName = userProfile?.fullName || currentUser?.displayName || "User";
+    const displayEmail = userProfile?.email || currentUser?.email || "";
+    const displayAvatar =
+        userProfile?.profilePicture ||
+        currentUser?.photoURL ||
+        "";
+
+    const getInitials = (name = "") => {
+        const parts = name.trim().split(/\s+/).filter(Boolean);
+        if (parts.length === 0) return "U";
+        if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+        return `${parts[0].charAt(0)}${parts[parts.length - 1].charAt(0)}`.toUpperCase();
+    };
+
+    const userMenuItems = useMemo(() => ([
+        {
+            key: "profile",
+            label: "Profile",
+            icon: <UserOutlined />
+        },
+        {
+            key: "logout",
+            label: "Logout",
+            icon: <LogoutOutlined />,
+            danger: true
+        }
+    ]), []);
+
+    const handleUserMenuClick = ({ key }) => {
+        if (key === "profile") {
+            navigate("/profile");
+            return;
+        }
+
+        if (key === "logout") {
+            setShowLogoutModal(true);
+        }
+    };
+
     const upsertConversation = useCallback((updatedConv) => {
         setConversations((prev) => {
             const exists = prev.find((c) => c._id === updatedConv._id);
@@ -79,6 +122,33 @@ function Home() {
             }
         });
         return () => unsubscribe();
+    }, []);
+
+    // ─── Load user profile ────────────────────────────────────────────────────
+    const fetchUserProfile = useCallback(async () => {
+        if (!currentUser) return;
+
+        try {
+            const response = await getProfile();
+            if (response.success) {
+                setUserProfile(response.data);
+            }
+        } catch (err) {
+            console.log(err);
+        }
+    }, [currentUser]);
+
+    useEffect(() => {
+        fetchUserProfile();
+    }, [fetchUserProfile]);
+
+    useEffect(() => {
+        const handleProfileUpdated = (event) => {
+            setUserProfile(event.detail);
+        };
+
+        window.addEventListener("profileUpdated", handleProfileUpdated);
+        return () => window.removeEventListener("profileUpdated", handleProfileUpdated);
     }, []);
 
     // ─── Load conversations ───────────────────────────────────────────────────
@@ -319,18 +389,30 @@ function Home() {
                 {/* Sidebar Header */}
                 <div className="sidebar-header">
                     <div className="d-flex align-items-center justify-content-between w-100">
-                        <div className="d-flex align-items-center">
-                            <img
-                                src={currentUser.photoURL}
-                                alt="profile"
-                                className="profile-image"
-                                referrerPolicy="no-referrer"
-                            />
-                            <div className="user-metadata">
-                                <h6 className="mb-0">{currentUser.displayName}</h6>
-                                <small>{currentUser.email}</small>
-                            </div>
-                        </div>
+                        <Dropdown
+                            menu={{ items: userMenuItems, onClick: handleUserMenuClick }}
+                            trigger={["click"]}
+                            placement="bottomRight"
+                        >
+                            <button type="button" className="user-menu-trigger">
+                                {displayAvatar ? (
+                                    <img
+                                        src={displayAvatar}
+                                        alt="profile"
+                                        className="profile-image"
+                                        referrerPolicy="no-referrer"
+                                    />
+                                ) : (
+                                    <div className="profile-image profile-image-fallback">
+                                        {getInitials(displayName)}
+                                    </div>
+                                )}
+                                <div className="user-metadata">
+                                    <h6 className="mb-0">{displayName}</h6>
+                                    <small>{displayEmail}</small>
+                                </div>
+                            </button>
+                        </Dropdown>
                         <button
                             className="logout-btn"
                             onClick={() => setShowLogoutModal(true)}

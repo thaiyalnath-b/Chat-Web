@@ -15,8 +15,10 @@ function Login() {
 
             await API.post("/auth/google-login", {
                 firebaseUid: user.uid,
+                fullName: user.displayName,
                 name: user.displayName,
                 email: user.email,
+                profilePicture: user.photoURL,
                 profilePic: user.photoURL
             });
 

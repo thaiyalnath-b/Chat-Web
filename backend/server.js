@@ -30,7 +30,7 @@ const io = new Server(server, {
             process.env.FRONTEND_URL,
             process.env.FRONTEND_NETWORK_URL
         ],
-        methods: ["GET", "POST", "PATCH"]
+        methods: ["GET", "POST", "PUT", "PATCH"]
     }
 });
 
@@ -44,7 +44,7 @@ app.use(
         credentials: true
     })
 );
-app.use(express.json());
+app.use(express.json({ limit: "5mb" }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
@@ -208,7 +208,7 @@ async function buildConversationPayload(conversationId, senderEmail, receiverEma
             ...base,
             unreadCount: 0,
             otherUser: receiverUser
-                ? { name: receiverUser.name, email: receiverUser.email, profilePic: receiverUser.profilePic, isOnline: receiverUser.isOnline }
+                ? { name: receiverUser.fullName || receiverUser.name, email: receiverUser.email, profilePic: receiverUser.profilePicture || receiverUser.profilePic, isOnline: receiverUser.isOnline }
                 : null
         },
         forReceiver: {
@@ -218,7 +218,7 @@ async function buildConversationPayload(conversationId, senderEmail, receiverEma
                     receiverEmail.replace(/\./g, "_")
                 ) || 0,
             otherUser: senderUser
-                ? { name: senderUser.name, email: senderUser.email, profilePic: senderUser.profilePic, isOnline: senderUser.isOnline }
+                ? { name: senderUser.fullName || senderUser.name, email: senderUser.email, profilePic: senderUser.profilePicture || senderUser.profilePic, isOnline: senderUser.isOnline }
                 : null
         }
     };

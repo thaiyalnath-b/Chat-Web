@@ -127,6 +127,35 @@
     text-overflow: ellipsis;
 }
 
+.user-menu-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    min-width: 0;
+    flex: 1;
+    border-radius: var(--radius-sm);
+    transition: background-color 0.2s ease;
+}
+
+.user-menu-trigger:hover {
+    background: var(--accent-dim);
+}
+
+.profile-image-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--my-message-gradient);
+    color: #ffffff;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
 /* Logout */
 .logout-btn {
     background: transparent;

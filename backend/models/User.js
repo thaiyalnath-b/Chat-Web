@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema({
         required: true
     },
 
-    name: {
+    fullName: {
         type: String,
         required: true
     },
@@ -16,6 +16,22 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true,
         unique: true
+    },
+
+    profilePicture: {
+        type: String,
+        default: ""
+    },
+
+    bio: {
+        type: String,
+        default: "",
+        maxlength: 500
+    },
+
+    // Legacy fields kept in sync for existing chat payloads
+    name: {
+        type: String
     },
 
     profilePic: {
@@ -29,6 +45,16 @@ const userSchema = new mongoose.Schema({
 
 }, {
     timestamps: true
+});
+
+// Keep legacy fields aligned with profile fields
+userSchema.pre("save", async function () {
+    if (this.fullName) {
+        this.name = this.fullName;
+    }
+    if (this.profilePicture !== undefined) {
+        this.profilePic = this.profilePicture;
+    }
 });
 
 module.exports = mongoose.model("User", userSchema);
